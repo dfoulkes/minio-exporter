@@ -27,7 +27,8 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 
-	minio "github.com/minio/minio-go"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio/pkg/madmin"
 )
 
@@ -89,7 +90,10 @@ func NewMinioExporter(uri string, minioKey string, minioSecret string, bucketSta
 		return nil, fmt.Errorf("Minio admin client error %s", err)
 	}
 
-	minioClient, err := minio.New(urlMinio.Host, minioKey, minioSecret, secure)
+	minioClient, err := minio.New(urlMinio.Host, &minio.Options{
+		Creds:  credentials.NewStaticV4(minioKey, minioSecret, ""),
+		Secure: secure,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("Minio client error %s", err)
 	}
