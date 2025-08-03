@@ -43,6 +43,7 @@ jobs:
         fi
         # Get the required dependencies
         go get github.com/minio/minio-go/v7@v7.0.95
+        go get github.com/minio/madmin-go/v3@latest
         go get github.com/prometheus/client_golang@v0.9.4
         go get github.com/prometheus/common@v0.4.1
         go mod tidy

@@ -27,9 +27,9 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 
+	madmin "github.com/minio/madmin-go/v3"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/minio/minio/pkg/madmin"
 )
 
 const (
