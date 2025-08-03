@@ -1,3 +1,3 @@
 module github.com/dfoulkes/minio-exporter
 
-go 1.21
+go 1.23
