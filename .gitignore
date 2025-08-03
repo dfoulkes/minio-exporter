@@ -3,3 +3,7 @@
 /.tarballs
 /minio_exporter
 *.tar.gz
+
+# Helm environment-specific values files
+helm/minio-exporter/values-k3s.yaml
+helm/minio-exporter/values-*.yaml
