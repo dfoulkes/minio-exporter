@@ -48,6 +48,14 @@ jobs:
         go get github.com/prometheus/common@v0.4.1
         go mod tidy
 
+    - name: Run tests
+      run: |
+        go test -short
+
+    - name: Build Go binary
+      run: |
+        CGO_ENABLED=0 go build -o minio_exporter -a -installsuffix cgo
+
     - name: Determine version and create tag
       id: version
       run: |
@@ -117,10 +125,6 @@ jobs:
           echo "is_new_version=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Build Go binary
-      run: |
-        CGO_ENABLED=0 go build -o minio_exporter -a -installsuffix cgo
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -151,10 +155,6 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-
-    - name: Run tests
-      run: |
-        go test -short
 
     - name: Output version info
       run: |
