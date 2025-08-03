@@ -37,7 +37,15 @@ jobs:
 
     - name: Initialize Go modules
       run: |
-        go mod init github.com/dfoulkes/minio-exporter
+        # Only initialize if go.mod doesn't exist
+        if [ ! -f "go.mod" ]; then
+          go mod init github.com/dfoulkes/minio-exporter
+        fi
+        # Use older compatible versions that still have the log package
+        go get github.com/minio/minio-go@v6.0.14
+        go get github.com/minio/minio@v0.0.0-20190523181636-b4eff10e2733
+        go get github.com/prometheus/client_golang@v0.9.4
+        go get github.com/prometheus/common@v0.4.1
         go mod tidy
 
     - name: Determine version and create tag
