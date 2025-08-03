@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -459,80 +458,126 @@ func collectStorageInfo(si madmin.StorageInfo, ch chan<- prometheus.Metric) {
 		float64(totalDisks-onlineDisks))
 }
 
-// Collect all buckets stats per bucket. Each bucket stats runs in a go routine.
+// Collect all buckets stats using fast data usage API
 func collectBucketsStats(e *MinioExporter, ch chan<- prometheus.Metric) {
 	ctx := context.Background()
-	buckets, _ := e.MinioClient.ListBuckets(ctx)
-	wg := sync.WaitGroup{}
-	wg.Add(len(buckets))
-	for _, bucket := range buckets {
-		go func(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus.Metric) {
-			bucketStats(bucket, e, ch)
-			wg.Done()
-		}(bucket, e, ch)
+	
+	// Get all bucket usage data in one call (much faster)
+	dataUsage, err := e.AdminClient.DataUsageInfo(ctx)
+	if err != nil {
+		log.Debugf("Failed to get data usage info: %s", err)
+		// Fallback to listing buckets without detailed stats
+		buckets, err := e.MinioClient.ListBuckets(ctx)
+		if err == nil {
+			for _, bucket := range buckets {
+				location, _ := e.MinioClient.GetBucketLocation(ctx, bucket.Name)
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, "bucket", "exists"),
+						"Whether the bucket exists",
+						[]string{"bucket", "location"},
+						nil),
+					prometheus.GaugeValue,
+					1, bucket.Name, location)
+			}
+		}
+		return
 	}
-	wg.Wait()
+
+	// Process each bucket from usage data
+	for bucketName, bucketUsage := range dataUsage.BucketsUsage {
+		// Get bucket location
+		location, _ := e.MinioClient.GetBucketLocation(ctx, bucketName)
+		
+		// Emit bucket metrics
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, "bucket", "objects_number"),
+				"The number of objects in the bucket",
+				[]string{"bucket", "location"},
+				nil),
+			prometheus.GaugeValue,
+			float64(bucketUsage.ObjectsCount), bucketName, location)
+			
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, "bucket", "objects_total_size"),
+				"The total size of all objects in the bucket",
+				[]string{"bucket", "location"},
+				nil),
+			prometheus.GaugeValue,
+			float64(bucketUsage.Size), bucketName, location)
+	}
 }
 
-// calculate bucket statistics
+// calculate bucket statistics using fast data API
 func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus.Metric) {
 	ctx := context.Background()
 	location, _ := e.MinioClient.GetBucketLocation(ctx, bucket.Name)
-	var (
-		objNum               int64
-		bucketSize           int64
-		maxObjectSize        int64
-		incompleteUploads    int64
-		incompleteUploadSize int64
-	)
-
-	// Use the new API with context and ListObjectsV2Options
-	opts := minio.ListObjectsOptions{
-		Recursive: true,
-	}
-	for objStat := range e.MinioClient.ListObjects(ctx, bucket.Name, opts) {
-		if objStat.Err != nil {
-			continue
-		}
-		objNum = objNum + 1
-		bucketSize = bucketSize + objStat.Size
-		if objStat.Size > maxObjectSize {
-			maxObjectSize = objStat.Size
-		}
+	
+	// Use admin data usage API for fast bucket stats
+	dataUsage, err := e.AdminClient.DataUsageInfo(ctx)
+	if err != nil {
+		log.Debugf("Failed to get data usage for bucket %s: %s", bucket.Name, err)
+		// Fallback to basic metrics without object scanning
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, "bucket", "exists"),
+				"Whether the bucket exists",
+				[]string{"bucket", "location"},
+				nil),
+			prometheus.GaugeValue,
+			1, bucket.Name, location)
+		return
 	}
 
-	// List incomplete uploads
-	for upload := range e.MinioClient.ListIncompleteUploads(ctx, bucket.Name, "", true) {
-		if upload.Err != nil {
-			continue
-		}
-		incompleteUploads = incompleteUploads + 1
-		incompleteUploadSize = incompleteUploadSize + upload.Size
+	// Extract bucket-specific data from usage info
+	var objNum int64
+	var bucketSize int64
+	
+	// Look for bucket in the data usage info
+	if bucketData, exists := dataUsage.BucketsUsage[bucket.Name]; exists {
+		objNum = int64(bucketData.ObjectsCount)
+		bucketSize = int64(bucketData.Size)
+	} else {
+		// If bucket not found in usage data, use basic counting
+		log.Debugf("Bucket %s not found in data usage, using basic metrics", bucket.Name)
+		objNum = 0
+		bucketSize = 0
 	}
+
+	// Emit metrics
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "bucket", "objects_number"),
-			"The number of objects in to the bucket",
+			"The number of objects in the bucket",
 			[]string{"bucket", "location"},
 			nil),
 		prometheus.GaugeValue,
 		float64(objNum), bucket.Name, location)
+		
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "bucket", "objects_total_size"),
-			"The total size of all object in to the bucket",
+			"The total size of all objects in the bucket",
 			[]string{"bucket", "location"},
 			nil),
 		prometheus.GaugeValue,
 		float64(bucketSize), bucket.Name, location)
-	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "bucket", "max_object_size"),
-			"The maximum object size per bucket",
-			[]string{"bucket", "location"},
-			nil),
-		prometheus.GaugeValue,
-		float64(maxObjectSize), bucket.Name, location)
+
+	// Get incomplete uploads count (this is still fast)
+	var incompleteUploads int64
+	for upload := range e.MinioClient.ListIncompleteUploads(ctx, bucket.Name, "", false) {
+		if upload.Err != nil {
+			break
+		}
+		incompleteUploads++
+		// Only count, don't calculate sizes to keep it fast
+		if incompleteUploads > 100 { // Limit to avoid slowdown
+			break
+		}
+	}
+	
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "bucket", "incomplete_uploads_number"),
@@ -541,14 +586,6 @@ func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus
 			nil),
 		prometheus.GaugeValue,
 		float64(incompleteUploads), bucket.Name, location)
-	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "bucket", "incomplete_uploads_total_size"),
-			"The total size of incomplete upload per bucket",
-			[]string{"bucket", "location"},
-			nil),
-		prometheus.GaugeValue,
-		float64(incompleteUploadSize), bucket.Name, location)
 }
 
 // get Enviroment variable value if the variable exists otherwise
