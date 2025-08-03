@@ -461,7 +461,7 @@ func collectStorageInfo(si madmin.StorageInfo, ch chan<- prometheus.Metric) {
 // Collect all buckets stats using fast data usage API
 func collectBucketsStats(e *MinioExporter, ch chan<- prometheus.Metric) {
 	ctx := context.Background()
-	
+
 	// Get all bucket usage data in one call (much faster)
 	dataUsage, err := e.AdminClient.DataUsageInfo(ctx)
 	if err != nil {
@@ -488,7 +488,7 @@ func collectBucketsStats(e *MinioExporter, ch chan<- prometheus.Metric) {
 	for bucketName, bucketUsage := range dataUsage.BucketsUsage {
 		// Get bucket location
 		location, _ := e.MinioClient.GetBucketLocation(ctx, bucketName)
-		
+
 		// Emit bucket metrics
 		ch <- prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
@@ -498,7 +498,7 @@ func collectBucketsStats(e *MinioExporter, ch chan<- prometheus.Metric) {
 				nil),
 			prometheus.GaugeValue,
 			float64(bucketUsage.ObjectsCount), bucketName, location)
-			
+
 		ch <- prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, "bucket", "objects_total_size"),
@@ -514,7 +514,7 @@ func collectBucketsStats(e *MinioExporter, ch chan<- prometheus.Metric) {
 func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus.Metric) {
 	ctx := context.Background()
 	location, _ := e.MinioClient.GetBucketLocation(ctx, bucket.Name)
-	
+
 	// Use admin data usage API for fast bucket stats
 	dataUsage, err := e.AdminClient.DataUsageInfo(ctx)
 	if err != nil {
@@ -534,7 +534,7 @@ func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus
 	// Extract bucket-specific data from usage info
 	var objNum int64
 	var bucketSize int64
-	
+
 	// Look for bucket in the data usage info
 	if bucketData, exists := dataUsage.BucketsUsage[bucket.Name]; exists {
 		objNum = int64(bucketData.ObjectsCount)
@@ -555,7 +555,7 @@ func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus
 			nil),
 		prometheus.GaugeValue,
 		float64(objNum), bucket.Name, location)
-		
+
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "bucket", "objects_total_size"),
@@ -577,7 +577,7 @@ func bucketStats(bucket minio.BucketInfo, e *MinioExporter, ch chan<- prometheus
 			break
 		}
 	}
-	
+
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "bucket", "incomplete_uploads_number"),
