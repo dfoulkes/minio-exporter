@@ -49,6 +49,13 @@ get_dep:
 	@echo "... getting dependencies"
 	@$(GO) get -d
 
+get_specific_deps:
+	@echo "... getting specific dependency versions"
+	@$(GO) get github.com/minio/minio-go/v7@v7.0.95
+	@$(GO) get github.com/minio/madmin-go/v3@latest
+	@$(GO) get github.com/prometheus/client_golang@v0.9.4
+	@$(GO) get github.com/prometheus/common@v0.4.1
+
 docker: docker_build docker_push
 	@echo "... docker building and pushing"
 
@@ -156,6 +163,6 @@ helm-port-forward: helm-check
 	@echo "Access metrics at: http://localhost:9290/metrics"
 	@kubectl port-forward -n $(NAMESPACE) svc/$(RELEASE_NAME) 9290:9290
 
-.PHONY: all build format test docker_build docker_push tarball clean \
+.PHONY: all build format test get_dep get_specific_deps docker_build docker_push tarball clean \
 	helm-check helm-namespace helm-deploy-anonymous helm-deploy helm-deploy-with-monitoring \
 	helm-uninstall helm-status helm-logs helm-port-forward
