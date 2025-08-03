@@ -41,9 +41,8 @@ jobs:
         if [ ! -f "go.mod" ]; then
           go mod init github.com/dfoulkes/minio-exporter
         fi
-        # Use older compatible versions that still have the log package
+        # Get the required dependencies
         go get github.com/minio/minio-go/v7@v7.0.95
-        go get github.com/minio/minio@v0.0.0-20190523181636-b4eff10e2733
         go get github.com/prometheus/client_golang@v0.9.4
         go get github.com/prometheus/common@v0.4.1
         go mod tidy
